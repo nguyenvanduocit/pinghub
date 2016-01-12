@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 )
@@ -17,11 +18,20 @@ func main() {
 		Addr: "127.0.0.1:8081",
 	}
 
+	// Each websocket connection has a goroutine blocking on fd.Read()
+	// which consumes one OS thread. Remember to set ulimit -n.
+	// TODO: use netpoll to multiplex the websocket readers so they don't
+	// block individually. Then get rid of this config option.
+	maxThreads := 100000 // The golang default is 10k.
+	flag.IntVar(&maxThreads, "maxthreads", maxThreads, "OS thread limit (each connection needs 1).")
+
 	metricsPort := "8082"
 	flag.StringVar(&metricsPort, "mport", metricsPort, "metrics service port")
 	flag.StringVar(&server.Addr, "addr", server.Addr, "http service address (TCP address or absolute path for UNIX socket)")
 	origin := flag.String("origin", "", "websocket server checks Origin headers against this scheme://host[:port]")
 	flag.Parse()
+
+	debug.SetMaxThreads(maxThreads)
 
 	// Initialize metrics registry with expected stats
 	go startMetrics(metricsPort)
